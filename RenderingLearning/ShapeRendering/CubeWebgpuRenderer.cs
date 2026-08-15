@@ -477,7 +477,7 @@ public static unsafe class CubeWebgpuRenderer
       ResolveTarget = null,
       LoadOp = LoadOp.Clear,
       StoreOp = StoreOp.Store,
-      ClearValue = new Color(0.1, 0.1, 0.1, 1.0)
+      ClearValue = new Color(0, 0, 0, 0)
     };
 
     RenderPassDescriptor renderPassDescriptor = new RenderPassDescriptor
