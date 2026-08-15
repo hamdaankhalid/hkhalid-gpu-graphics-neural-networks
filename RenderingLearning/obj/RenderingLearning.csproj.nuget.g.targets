@@ -1,0 +1,7 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)ultz.native.sdl/2.32.10/buildTransitive/netstandard2.0/Ultz.Native.SDL.targets" Condition="Exists('$(NuGetPackageRoot)ultz.native.sdl/2.32.10/buildTransitive/netstandard2.0/Ultz.Native.SDL.targets')" />
+    <Import Project="$(NuGetPackageRoot)silk.net.sdl/2.23.0/buildTransitive/net6.0/Silk.NET.SDL.targets" Condition="Exists('$(NuGetPackageRoot)silk.net.sdl/2.23.0/buildTransitive/net6.0/Silk.NET.SDL.targets')" />
+  </ImportGroup>
+</Project>
