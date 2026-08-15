@@ -41,7 +41,6 @@ public static unsafe class WebGpuRendering
   private static IWindow _Window = null!;
   private static WebGPU wgpu = null!;
   private static Surface* _Surface;
-  private static SurfaceConfiguration _SurfaceConfiguration;
   private static SurfaceCapabilities _SurfaceCapabilities;
 
   private static Instance* _Instance;
@@ -439,7 +438,7 @@ public static unsafe class WebGpuRendering
 
   private static void CreateSwapchain()
   {
-    _SurfaceConfiguration = new SurfaceConfiguration
+    var surfaceConfiguration = new SurfaceConfiguration
     {
       Usage = TextureUsage.RenderAttachment,
       Format = _SurfaceCapabilities.Formats[0],
@@ -449,7 +448,7 @@ public static unsafe class WebGpuRendering
       Height = (uint)_Window.FramebufferSize.Y
     };
 
-    wgpu.SurfaceConfigure(_Surface, ref _SurfaceConfiguration);
+    wgpu.SurfaceConfigure(_Surface, ref surfaceConfiguration);
   }
 
   private static void WindowOnRender(double delta)
@@ -567,6 +566,7 @@ public static unsafe class WebGpuRendering
     wgpu.ShaderModuleRelease(_DrawShader);
     wgpu.BufferRelease(_CellsA);
     wgpu.BufferRelease(_CellsB);
+    wgpu.QueueRelease(_Queue);
     wgpu.DeviceRelease(_Device);
     wgpu.AdapterRelease(_Adapter);
     wgpu.SurfaceRelease(_Surface);

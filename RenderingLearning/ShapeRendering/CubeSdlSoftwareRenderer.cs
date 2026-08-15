@@ -15,7 +15,7 @@ public static unsafe class CubeSdlSoftwareRenderer
   // The simulation advances on its own clock, independent of the render loop:
   // vsync paces frames at the monitor's refresh rate (60/120/144 Hz depending
   // on the machine), which is the wrong clock for the world to evolve on.
-  private const ulong StepIntervalMs = 100; // 10 generations/sec
+  private const ulong StepIntervalMs = 100; 
 
   private static Sdl _sdl = null!;
   private static int[] _frameBuffer = null!;
@@ -23,16 +23,22 @@ public static unsafe class CubeSdlSoftwareRenderer
   private static Renderer* _renderer;
   private static Texture* _texture;
 
-  private static Camera _camera;
+  private static Camera _camera = null!;
 
-  private static IShape[] shapes = new IShape[3]
+  // Held-key state for free-fly movement (WASD + Q/E). Keydown/Keyup events
+  // set these; the main loop turns them into a per-frame move axis so motion
+  // is smooth and frame-rate independent instead of stepping per key repeat.
+  private static bool _moveFwd, _moveBack, _moveLeft, _moveRight, _moveUp, _moveDown;
+
+  // Extrinsic state only: each entry says WHICH mesh and WHERE. The meshes
+  // themselves are the shared flyweights in Meshes — spawning another cube
+  // here would reuse Meshes.Cube's vertices, not copy them.
+  private static SceneObject[] _scene = new SceneObject[3]
   {
-       new Cube(scale: 2, origin: Vector3.Zero),
-       new Triangle(scale: 2, origin: new Vector3(3,3,3)),
-       new Quad(scale: 2, origin: new Vector3(-3, -3, -3))
+       new(Meshes.Cube, Vector3.Zero, scale: 2f),
+       new(Meshes.Triangle, new Vector3(3, 3, 3), scale: 2f),
+       new(Meshes.Quad, new Vector3(-3, -3, -3), scale: 2f)
   };
-
-  private static ulong _lastStepMs;
 
   public static int Run()
   {
@@ -95,7 +101,9 @@ public static unsafe class CubeSdlSoftwareRenderer
       return -1;
     }
 
-    _camera = new Camera(WindowWidth, WindowHeight);
+    // Style.Orbit = mouse orbits a fixed target, wheel zooms.
+    // Style.FreeFly = mouse looks, WASD flies, Q/E descend/rise, wheel dollies.
+    _camera = new Camera(WindowWidth, WindowHeight, Camera.Style.FreeFly);
 
     // FPS tracking: count frames and report once a second. Measuring over a
     // whole second (rather than 1/frame-time each frame) averages out the
@@ -104,11 +112,17 @@ public static unsafe class CubeSdlSoftwareRenderer
     int framesThisWindow = 0;
 
 
+    ulong lastFrameMs = _sdl.GetTicks64();
+
     // The classic game loop: read input, advance the animation (here: compute
     // the frame's pixels on the CPU), then hand the finished frame to the GPU.
     while (PollEvents())
     {
-      Render(_sdl.GetTicks64());
+      ulong frameStart = _sdl.GetTicks64();
+      _camera.OnMove(BuildMoveAxis(), (frameStart - lastFrameMs) / 1000f);
+      lastFrameMs = frameStart;
+
+      Render(frameStart);
       Present();
 
       framesThisWindow++;
@@ -151,13 +165,36 @@ public static unsafe class CubeSdlSoftwareRenderer
       }
       else if (e.Type == (uint)EventType.Mousewheel)
       {
-        // SDL2 mouse wheel DX/DY or X/Y depending on version. 
+        // SDL2 mouse wheel DX/DY or X/Y depending on version.
         // In Silk.NET.SDL, it's usually e.Wheel.X or e.Wheel.DX for horizontal, e.Wheel.Y or e.Wheel.DY for vertical.
         _camera.OnZoom((float)e.Wheel.Y * 0.1f);
+      }
+      else if (e.Type == (uint)EventType.Keydown || e.Type == (uint)EventType.Keyup)
+      {
+        bool down = e.Type == (uint)EventType.Keydown;
+        switch (e.Key.Keysym.Sym)
+        {
+          case (int)KeyCode.KW: _moveFwd = down; break;
+          case (int)KeyCode.KS: _moveBack = down; break;
+          case (int)KeyCode.KA: _moveLeft = down; break;
+          case (int)KeyCode.KD: _moveRight = down; break;
+          case (int)KeyCode.KE: _moveUp = down; break;
+          case (int)KeyCode.KQ: _moveDown = down; break;
+        }
       }
     }
 
     return true;
+  }
+
+  // Collapse held keys into a single move axis for Camera.OnMove:
+  // X = strafe (A/D), Y = rise (Q/E), Z = forward (W/S). Opposing keys cancel.
+  private static Vector3 BuildMoveAxis()
+  {
+    return new Vector3(
+      (_moveRight ? 1f : 0f) - (_moveLeft ? 1f : 0f),
+      (_moveUp ? 1f : 0f) - (_moveDown ? 1f : 0f),
+      (_moveFwd ? 1f : 0f) - (_moveBack ? 1f : 0f));
   }
 
   // Display the frame that Render() just finished: upload the framebuffer to
@@ -209,16 +246,20 @@ public static unsafe class CubeSdlSoftwareRenderer
     // 1. Clear framebuffer to background color
     Array.Fill(_frameBuffer, bgColor);
 
-    Matrix4x4 mvp = _camera.Mvp;
+    Matrix4x4 viewProj = _camera.Mvp;
 
-    for (int j = 0; j < 3; j++)
+    foreach (SceneObject obj in _scene)
     {
-      IShape shape = shapes[j];
-      Triangle[] array = shape.GetTriangles();
-      for (int i = 0; i < array.Length; i++)
+      // Extrinsic state folds in here: the object's model matrix goes in
+      // front of view * projection (row-major .NET order), so the shared
+      // local-space vertices are placed per object during the multiply.
+      Matrix4x4 mvp = obj.ModelMatrix * viewProj;
+
+      Vector3[] verts = obj.Mesh.Vertices;
+      for (int i = 0; i < verts.Length; i += 3)
       {
-        Triangle tri = array[i];
-        if (ProjectTriangle(ref tri, mvp, out Vector3 s0, out Vector3 s1, out Vector3 s2))
+        if (ProjectTriangle(in verts[i], in verts[i + 1], in verts[i + 2], mvp,
+              out Vector3 s0, out Vector3 s1, out Vector3 s2))
         {
           RasterizeTriangle(ref s0, ref s1, ref s2); // Draw to _frameBuffer
         }
@@ -226,12 +267,12 @@ public static unsafe class CubeSdlSoftwareRenderer
     }
   }
 
-  private static bool ProjectTriangle(ref Triangle t, Matrix4x4 mvp,
+  private static bool ProjectTriangle(in Vector3 a, in Vector3 b, in Vector3 c, Matrix4x4 mvp,
       out Vector3 screenA, out Vector3 screenB, out Vector3 screenC)
   {
-    var v0 = TransformClip(ref t.V1, mvp);
-    var v1 = TransformClip(ref t.V2, mvp);
-    var v2 = TransformClip(ref t.V3, mvp);
+    var v0 = TransformClip(in a, mvp);
+    var v1 = TransformClip(in b, mvp);
+    var v2 = TransformClip(in c, mvp);
 
     // Perspective divide & backface/culling check
     if (v0.W <= 0 || v1.W <= 0 || v2.W <= 0)
@@ -266,7 +307,7 @@ public static unsafe class CubeSdlSoftwareRenderer
     return true;
   }
 
-  private static Vector4 TransformClip(ref Vector3 v, Matrix4x4 mvp)
+  private static Vector4 TransformClip(in Vector3 v, Matrix4x4 mvp)
   {
     // Manual MVP multiply (avoids matrix-vector overhead in tight loops)
     float x = v.X * mvp.M11 + v.Y * mvp.M21 + v.Z * mvp.M31 + mvp.M41;

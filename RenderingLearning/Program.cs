@@ -2,7 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using RenderingLearning.ShapeRendering;
-using Silk.NET.Core;
 
 namespace RenderingLearning;
 
@@ -12,7 +11,7 @@ public static class Program
 
   public static void Main(string[] args)
   {
-    string arg = args.FirstOrDefault() ?? "cube_cpu";
+    string arg = args.FirstOrDefault() ?? "cube_gpu";
 
     switch (arg)
     {
@@ -24,6 +23,9 @@ public static class Program
         break;
       case "cube_cpu":
         CubeSdlSoftwareRenderer.Run(); // cube rendering 
+        break;
+      case "cube_gpu":
+        CubeWebgpuRenderer.Run();
         break;
     }
   }
